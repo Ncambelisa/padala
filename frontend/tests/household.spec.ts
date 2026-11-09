@@ -25,7 +25,10 @@ test('a household can allocate a padala, submit a declaration, and accept it', a
   for (const input of await page.locator('.plan-line input[inputmode="decimal"]').all()) await input.fill('1000');
   await page.getByRole('button', { name: 'Create padala', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'E2E monthly support', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Add evidence', exact: true }).click();
+  await expect(page.getByText('Money received', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your money plan', exact: true })).toBeVisible();
+  await expect(page.getByText('Still needs an update', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add family update', exact: true }).click();
   await page.getByLabel('Merchant / payee').fill('Fictional corner store');
   await page.getByLabel('Total amount (PHP)', { exact: true }).fill('500');
   await page.getByLabel('Explanation (required without a receipt)').fill('Fictional test purchase; no payment actually occurred.');
@@ -202,9 +205,9 @@ test('two household members can complete a fictional remittance review workflow'
     await member.reload();
     await member.locator('.latest-card').filter({ hasText: 'E2E two-account workflow' }).getByRole('button', { name: 'View padala', exact: true }).click();
     await member.getByRole('button', { name: 'Confirm received', exact: true }).click();
-    await expect(member.locator('.page-heading p').filter({ hasText: 'Recipient confirmed receiving the money.' })).toBeVisible();
+    await expect(member.locator('.page-heading p').filter({ hasText: 'confirmed receipt' })).toBeVisible();
 
-    await member.getByRole('button', { name: 'Add evidence', exact: true }).click();
+    await member.getByRole('button', { name: 'Add family update', exact: true }).click();
     await member.getByLabel('Receipt file').setInputFiles(sampleReceipt);
     await expect(member.getByText('SAMPLE-groceries.png', { exact: true })).toBeVisible();
     await member.getByLabel('Merchant / payee').fill('Fictional grocery receipt');
