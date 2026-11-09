@@ -3,7 +3,7 @@
 This repository's `render.yaml` creates a **free staging environment only**:
 
 - `padala-nico-staging-web`: public Next.js test site;
-- `padala-nico-staging-api`: public FastAPI test endpoint, with browser traffic normally proxied through the web site;
+- `padala-nico-staging-api`: public FastAPI test endpoint, with browser traffic proxied through the web site;
 - `padala-nico-staging-db`: private Render PostgreSQL instance.
 
 It intentionally uses `PADALA_ENV=staging`, disables billing and email
@@ -33,6 +33,9 @@ The API health endpoint is `/api/v1/health`. It should return `"environment":
 ## Expected limitations
 
 - Free services can sleep, so the first request after inactivity can be slow.
+- The free web service reaches the staging API through its public Render URL.
+  This is a staging compatibility measure, not the protected private-network
+  routing required for production.
 - The staging database and temporary uploads are not a backup or retention
   system. Treat all records as disposable test data.
 - Billing, Xendit, outbound email, OCR, background email delivery, persistent

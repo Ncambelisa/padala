@@ -54,11 +54,12 @@ services:
     startCommand: npm run start -- --port $PORT
     autoDeployTrigger: commit
     envVars:
-      - key: API_INTERNAL_HOSTPORT
-        fromService:
-          name: padala-nico-staging-api
-          type: web
-          property: hostport
+      # Free Render staging services can send private-network traffic, but the
+      # generated private DNS hostname is not reliably available during their
+      # first Blueprint deployment. Use the public staging API URL here only.
+      # Production must use a protected private API address instead.
+      - key: API_INTERNAL_URL
+        value: https://padala-nico-staging-api.onrender.com
 
 databases:
   - name: padala-nico-staging-db
