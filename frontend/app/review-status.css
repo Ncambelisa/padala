@@ -1,0 +1,6 @@
+/* Accepted family updates are completed records. The OFW can still use the
+   separate correction action if a record needs to be voided. */
+.modal:has(.review-badges .badge.accepted) label:has(#review-note),
+.modal:has(.review-badges .badge.accepted) .review-actions {
+  display: none;
+}

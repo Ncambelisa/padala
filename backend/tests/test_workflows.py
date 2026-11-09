@@ -319,6 +319,13 @@ def test_stale_review_blocked(client):
     assert client.post(f"/api/v1/evidence/{e['id']}/review",json=body).status_code==200
     assert client.post(f"/api/v1/evidence/{e['id']}/review",json=body).status_code==409
 
+def test_accepted_record_cannot_be_accepted_again(client):
+    owner,_,r=family_padala(client);e=client.post('/api/v1/evidence',json=evidence_body(r)).json();login(client,owner['email'])
+    accepted=client.post(f"/api/v1/evidence/{e['id']}/review",json={'status':'accepted','expected_version':e['version']}).json()
+    repeated=client.post(f"/api/v1/evidence/{e['id']}/review",json={'status':'accepted','expected_version':accepted['version']})
+    assert repeated.status_code==409
+    assert repeated.json()['detail']=='This record has already been accepted. Void it only if a correction is needed.'
+
 def test_no_forged_verification_field(client):
     _,_,r=family_padala(client);body=evidence_body(r);body['provider_confirmation']='verified'
     assert client.post('/api/v1/evidence',json=body).status_code==422

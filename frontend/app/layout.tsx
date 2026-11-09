@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './review-status.css';
 export const metadata: Metadata = {
   title: 'Padala — care, accounted for',
   description: 'Shared remittance allocations and receipt records for your household.',

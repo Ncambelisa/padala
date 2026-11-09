@@ -830,6 +830,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         e=owned(db,Evidence,eid,user);require_version(e,data.expected_version)
         if e.status=='voided':
             raise HTTPException(400,'A voided record cannot be accepted.')
+        if e.status=='accepted':
+            raise HTTPException(409,'This record has already been accepted. Void it only if a correction is needed.')
         e.status=data.status;e.review_note=data.note
         audit(db,user,'evidence_reviewed',f'{e.merchant}: {data.status}. {data.note}',e.remittance_id)
         notify(db,settings,db.get(User,e.uploader_id),'Receipt review updated',f'{e.merchant}: {data.status}.',e.remittance_id)
