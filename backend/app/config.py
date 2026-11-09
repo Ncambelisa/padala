@@ -12,6 +12,27 @@ load_dotenv(ROOT / '.env')
 def flag(name: str, default: str = 'false') -> bool:
     return os.getenv(name, default).lower() in {'1', 'true', 'yes'}
 
+def public_app_url() -> str:
+    """Read a configured public URL without putting provider values in source.
+
+    `PUBLIC_APP_HOST` is useful for hosts such as Render that provide a service's
+    public hostname as an environment variable but do not offer string
+    interpolation in deployment blueprints.  Explicit `APP_URL` always wins.
+    """
+    explicit = os.getenv('APP_URL', '').strip().rstrip('/')
+    if explicit:
+        return explicit
+    host = os.getenv('PUBLIC_APP_HOST', '').strip().strip('/')
+    return f'https://{host}' if host else 'http://localhost:3000'
+
+def configured_origins() -> list[str]:
+    origins = [s.strip().rstrip('/') for s in os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000').split(',') if s.strip()]
+    public_url = public_app_url()
+    public_origin = Settings._origin(public_url)
+    if public_origin and public_origin not in origins:
+        origins.append(public_origin)
+    return origins
+
 
 class ProductionConfigurationError(RuntimeError):
     """Raised when a production process is configured with an unsafe local default."""
@@ -21,8 +42,8 @@ class Settings:
     environment: str = field(default_factory=lambda: os.getenv('PADALA_ENV', 'development').strip().lower())
     data_dir: Path = field(default_factory=lambda: Path(os.getenv('DATA_DIR', str(ROOT / 'data'))).resolve())
     database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL', ''))
-    app_url: str = field(default_factory=lambda: os.getenv('APP_URL', 'http://localhost:3000').rstrip('/'))
-    allowed_origins: list[str] = field(default_factory=lambda: [s.strip().rstrip('/') for s in os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000').split(',') if s.strip()])
+    app_url: str = field(default_factory=public_app_url)
+    allowed_origins: list[str] = field(default_factory=configured_origins)
     allowed_hosts: list[str] = field(default_factory=lambda: [s.strip().lower() for s in os.getenv('ALLOWED_HOSTS', '').split(',') if s.strip()])
     internal_proxy_origins: list[str] = field(default_factory=lambda: [s.strip().rstrip('/') for s in os.getenv('INTERNAL_PROXY_ORIGINS', '').split(',') if s.strip()])
     trusted_proxy_networks: list[str] = field(default_factory=lambda: [s.strip() for s in os.getenv('TRUSTED_PROXY_NETWORKS', '').split(',') if s.strip()])
@@ -84,6 +105,21 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.environment == 'production'
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """Normalize standard PostgreSQL URLs for SQLAlchemy's psycopg driver.
+
+        Managed PostgreSQL providers commonly issue `postgresql://` URLs.  The
+        application uses psycopg 3, so normalize only that scheme internally;
+        never alter SQLite or another database URL.
+        """
+        url = self.database_url
+        if url.startswith('postgres://'):
+            url = 'postgresql://' + url.removeprefix('postgres://')
+        if url.startswith('postgresql://'):
+            return 'postgresql+psycopg://' + url.removeprefix('postgresql://')
+        return url
 
     @property
     def privacy_notice_published(self) -> bool:
@@ -242,7 +278,7 @@ class Settings:
             errors.append('APP_URL must be one HTTPS origin in production.')
         if not self.secure_cookies:
             errors.append('SECURE_COOKIES=true is required in production.')
-        if not self.database_url.startswith('postgresql+psycopg://'):
+        if not self.sqlalchemy_database_url.startswith('postgresql+psycopg://'):
             errors.append('DATABASE_URL must use PostgreSQL via postgresql+psycopg:// in production; SQLite is local-only.')
         if not self.allowed_origins:
             errors.append('ALLOWED_ORIGINS must contain the public HTTPS application origin.')

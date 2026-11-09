@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 def make_database(settings: Settings):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    url = settings.database_url or f'sqlite:///{settings.data_dir / "padala.sqlite3"}'
+    url = settings.sqlalchemy_database_url or f'sqlite:///{settings.data_dir / "padala.sqlite3"}'
     kwargs = {'check_same_thread': False, 'timeout': 30} if url.startswith('sqlite') else {}
     engine = create_engine(url, connect_args=kwargs, pool_pre_ping=True)
     if url.startswith('sqlite'):

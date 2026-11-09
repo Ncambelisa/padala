@@ -83,6 +83,24 @@ def test_non_production_keeps_local_developer_defaults():
     Settings(environment='development').validate()
 
 
+@pytest.mark.parametrize(('database_url', 'expected'), [
+    ('postgresql://user:pass@db.example.test:5432/padala', 'postgresql+psycopg://user:pass@db.example.test:5432/padala'),
+    ('postgres://user:pass@db.example.test:5432/padala', 'postgresql+psycopg://user:pass@db.example.test:5432/padala'),
+])
+def test_standard_managed_postgres_urls_use_the_psycopg_driver(database_url, expected):
+    assert production_settings(database_url=database_url).sqlalchemy_database_url == expected
+    production_settings(database_url=database_url).validate()
+
+
+def test_render_style_public_host_configures_the_staging_origin(monkeypatch):
+    monkeypatch.delenv('APP_URL', raising=False)
+    monkeypatch.delenv('ALLOWED_ORIGINS', raising=False)
+    monkeypatch.setenv('PUBLIC_APP_HOST', 'padala-staging.example.test')
+    settings = Settings(environment='staging')
+    assert settings.app_url == 'https://padala-staging.example.test'
+    assert 'https://padala-staging.example.test' in settings.allowed_origins
+
+
 def test_only_configured_proxy_networks_are_trusted():
     settings = production_settings()
     assert settings.is_trusted_proxy('10.42.0.7') is True
