@@ -46,6 +46,44 @@ test('a wrong password shows a clear error', async ({ page }) => {
   await expect(page.locator('.error[role="alert"]')).toContainText('Email or password is incorrect');
 });
 
+test('a sender can review a pending invitation and replace a lost link safely', async ({ browser, page }) => {
+  const oldLinkContext = await browser.newContext();
+  const oldLinkPage = await oldLinkContext.newPage();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const inviteeEmail = `pending-${suffix}@example.test`;
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create a household', exact: true }).click();
+    await page.getByLabel('Your name').fill('Pending Sender');
+    await page.getByLabel('Household name').fill('Pending invitation test household');
+    await page.getByLabel('Email address').fill(`pending-sender-${suffix}@example.test`);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await acknowledgePrivacyIfRequired(page);
+    await page.getByRole('button', { name: 'Create household', exact: true }).click();
+
+    await page.getByRole('button', { name: 'My family', exact: true }).click();
+    await page.getByRole('button', { name: 'Invite family', exact: true }).click();
+    await page.getByLabel('Their name').fill('Pending Member');
+    await page.getByLabel('Their email').fill(inviteeEmail);
+    await page.getByRole('button', { name: 'Create invitation', exact: true }).click();
+    const firstLink = await page.getByLabel('Private invitation link').inputValue();
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Pending invitations', exact: true })).toBeVisible();
+    await expect(page.getByText(inviteeEmail, { exact: false })).toBeVisible();
+    page.on('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Replace link', exact: true }).click();
+    const replacement = await page.getByLabel('Private invitation link').inputValue();
+    expect(replacement).not.toBe(firstLink);
+
+    await oldLinkPage.goto(firstLink);
+    await expect(oldLinkPage.locator('.error[role="alert"]')).toContainText('Invitation expired or unavailable');
+  } finally {
+    await oldLinkContext.close();
+  }
+});
+
 test('the privacy notice page is available before sign-in', async ({ page }) => {
   await page.goto('/privacy');
   await expect(page.getByRole('heading', { name: /How Padala handles household information|Privacy notice not yet published/ })).toBeVisible();

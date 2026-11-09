@@ -12,5 +12,8 @@ export type Extraction = { provider:string; merchant:string|null; occurred_on:st
 export type Upload = { id:string; name:string; mime:string; size:number; download_url:string; extraction:Partial<Extraction> };
 export type Evidence = { id:string; remittance_id:string; uploader_id:string; uploader_name:string; merchant:string; amount_minor:number; occurred_on:string; reference:string; note:string; status:'pending'|'accepted'|'clarification'|'voided'; review_note:string; checks:string[]; version:number; created_at:number; provider_confirmation:'not_connected'; document_status:string; upload:Upload|null; lines:{allocation_id:string;amount_minor:number}[] };
 export type Audit = { id:string; actor:string; action:string; detail:string; remittance_id:string; created_at:number };
+// Invitation bearer links are deliberately never returned here. The owner can
+// see that an invitation remains pending and replace a lost link instead.
+export type PendingInvitation = { name:string; email:string; expires_at:number };
 export type Remittance = { id:string; title:string; amount_minor:number; received_on:string; recipient_id:string; source_currency:string; source_amount:string; confirmed:boolean; created_at:number; allocations:Allocation[]; recorded_minor:number; remaining_minor:number; accepted_minor:number; savings_contributions_minor:number; pending_count:number; evidence_count:number; evidence?:Evidence[]; activity?:Audit[] };
 export type Notice = { id:string; title:string; detail:string; remittance_id:string; is_read:boolean; created_at:number };

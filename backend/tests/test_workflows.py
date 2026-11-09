@@ -102,6 +102,26 @@ def test_invite_is_single_use(client):
     assert user['role']=='member'
     assert client.post('/api/v1/invitations/accept',json={'token':token,'name':'Replay','password':PASSWORD}).status_code==400
 
+def test_sender_can_review_pending_invitations_and_replace_a_lost_link(client):
+    register(client)
+    created=client.post('/api/v1/invitations',json={'name':'Family','email':'family@example.test'})
+    assert created.status_code==201,created.text
+    first_token=created.json()['link'].split('invite=')[1]
+
+    pending=client.get('/api/v1/invitations')
+    assert pending.status_code==200,pending.text
+    assert pending.json()==[{'name':'Family','email':'family@example.test','expires_at':pending.json()[0]['expires_at']}]
+    assert 'link' not in pending.text and first_token not in pending.text
+    assert client.post('/api/v1/invitations',json={'name':'Family','email':'family@example.test'}).status_code==409
+
+    replacement=client.post('/api/v1/invitations/replace',json={'email':'family@example.test'})
+    assert replacement.status_code==200,replacement.text
+    second_token=replacement.json()['link'].split('invite=')[1]
+    assert second_token != first_token
+    assert client.get(f'/api/v1/invitations/{first_token}').status_code==404
+    assert client.get(f'/api/v1/invitations/{second_token}').status_code==200
+    assert client.get('/api/v1/invitations').json()[0]['email']=='family@example.test'
+
 def test_member_cannot_invite(client):
     register(client);member(client)
     assert client.post('/api/v1/invitations',json={'name':'Other','email':'new@example.test'}).status_code==403

@@ -32,6 +32,9 @@ class Register(EmailSchema):
 class Invite(EmailSchema):
     name: Name
 
+class ReplaceInvitation(EmailSchema):
+    """Replace an active invitation without retaining its bearer token."""
+
 class AcceptInvite(Schema):
     token: str = Field(min_length=20, max_length=128)
     name: Name

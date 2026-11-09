@@ -598,12 +598,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_sender(user);limit(request,'invitations',20)
         if db.scalar(select(User).where(User.email==data.email)):
             raise HTTPException(409,'This email is already registered.')
+        now=int(time.time())
+        if db.scalar(select(Invitation).where(Invitation.household_id==user.household_id,Invitation.email==data.email,Invitation.used==False,Invitation.expires_at>=now)):
+            raise HTTPException(409,'An active invitation already exists for this email. Replace its link from Pending invitations if needed.')
         require_household_capacity(db,user.household_id,include_pending=True)
         token=secrets.token_urlsafe(32)
-        db.add(Invitation(token_hash=token_hash(token),household_id=user.household_id,email=data.email,name=data.name,expires_at=int(time.time())+7*86400))
+        db.add(Invitation(token_hash=token_hash(token),household_id=user.household_id,email=data.email,name=data.name,expires_at=now+7*86400))
         link=f'{settings.app_url}/?invite={token}'
         queue_email(db,settings,data.email,'Your Padala household invitation',f'{user.name} invited you to a shared household.\nOpen {link}\nThe link expires in 7 days. Only accept an invitation from someone you know.')
         audit(db,user,'member_invited',f'Invited {data.name}.');db.commit()
+        return {'link':link,'email_queued':bool(settings.smtp_host),'expires_in_days':7}
+
+    @app.get('/api/v1/invitations',tags=['Household'])
+    def pending_invitations(db:Db,user:Auth):
+        """List pending invitation metadata without disclosing bearer tokens."""
+        require_sender(user)
+        rows=db.scalars(select(Invitation).where(Invitation.household_id==user.household_id,Invitation.used==False,Invitation.expires_at>=int(time.time())).order_by(Invitation.expires_at)).all()
+        return [{'name':row.name,'email':row.email,'expires_at':row.expires_at} for row in rows]
+
+    @app.post('/api/v1/invitations/replace',tags=['Household'])
+    def replace_invitation(data:ReplaceInvitation,request:Request,db:Db,user:Auth):
+        """Invalidate one pending invitation and issue a new copyable link."""
+        require_sender(user);limit(request,'invitations',20)
+        now=int(time.time())
+        current=db.scalar(select(Invitation).where(Invitation.household_id==user.household_id,Invitation.email==data.email,Invitation.used==False,Invitation.expires_at>=now))
+        if current is None:
+            raise HTTPException(404,'No active invitation was found for this email.')
+        # The original random token is stored only as a hash. Delete its record
+        # before issuing a replacement, so it cannot be accepted after a new
+        # link is copied. The audit trail records the replacement action.
+        db.delete(current);db.flush()
+        token=secrets.token_urlsafe(32)
+        replacement=Invitation(token_hash=token_hash(token),household_id=user.household_id,email=current.email,name=current.name,expires_at=now+7*86400)
+        db.add(replacement)
+        link=f'{settings.app_url}/?invite={token}'
+        queue_email(db,settings,current.email,'Your replacement Padala invitation',f'{user.name} replaced a household invitation link.\nOpen {link}\nThe link expires in 7 days. Only accept an invitation from someone you know.')
+        audit(db,user,'invitation_link_replaced',f'Replaced the pending invitation link for {current.name}.')
+        db.commit()
         return {'link':link,'email_queued':bool(settings.smtp_host),'expires_in_days':7}
 
     @app.get('/api/v1/invitations/{token}',tags=['Household'])
