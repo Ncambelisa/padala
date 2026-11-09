@@ -72,8 +72,8 @@ test('a sender can review a pending invitation and replace a lost link safely', 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Pending invitations', exact: true })).toBeVisible();
     await expect(page.getByText(inviteeEmail, { exact: false })).toBeVisible();
-    page.on('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Replace link', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Replace link', exact: true }).click();
     const replacement = await page.getByLabel('Private invitation link').inputValue();
     expect(replacement).not.toBe(firstLink);
 
@@ -82,6 +82,7 @@ test('a sender can review a pending invitation and replace a lost link safely', 
 
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
     await page.getByRole('button', { name: 'Revoke invite', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Revoke invitation', exact: true }).click();
     await expect(page.getByText('No invitations are waiting to be accepted.', { exact: true })).toBeVisible();
     await oldLinkPage.goto(replacement);
     await expect(oldLinkPage.locator('.error[role="alert"]')).toContainText('Invitation expired or unavailable');
@@ -274,8 +275,8 @@ test('a sender can revoke and restore a family member without erasing the househ
     await member.getByRole('button', { name: 'Join household', exact: true }).click();
     await expect(member.getByRole('heading', { name: 'Hello, Access.' })).toBeVisible();
 
-    sender.on('dialog', dialog => dialog.accept());
     await sender.getByRole('button', { name: 'Remove access', exact: true }).click();
+    await sender.getByRole('dialog').getByRole('button', { name: 'Remove access', exact: true }).click();
     await expect(sender.getByText('Access removed', { exact: true })).toBeVisible();
     await expect(sender.getByRole('status')).toContainText('Existing shared records remain in the household history.');
 

@@ -7,9 +7,10 @@ import type { Session, Household, Config, Remittance, Evidence, Upload, Extracti
 
 type View = 'dashboard'|'remittances'|'receipts'|'family'|'reports'|'settings'|'notifications';
 type AuthMode = 'login'|'register'|'invite'|'forgot'|'reset'|'resend';
-type ModalName = 'new'|'upload'|'review'|'invite'|null;
+type ModalName = 'new'|'upload'|'review'|'invite'|'confirm'|null;
 type PlanLine = {name:string;kind:'expense'|'savings';amount:string;assigned_to:string;due_on:string};
 type Split = {allocation_id:string;amount:string};
+type Confirmation = {title:string;description:string;confirmLabel:string;danger?:boolean;run:()=>Promise<void>};
 type State = {
   ready:boolean; busy:boolean; error:string; message:string; session:Session|null; config:Config|null;
   household:Household|null; remittances:Remittance[]; evidence:Evidence[]; notices:Notice[]; activity:Audit[]; pendingInvitations:PendingInvitation[];
@@ -17,7 +18,7 @@ type State = {
   authMode:AuthMode; token:string; invitation:{name:string;email:string;household_name:string}|null;
   search:string; statusFilter:string; plan:PlanLine[]; planAmount:string; privacyAcknowledged:boolean;
   receipt:{merchant:string;amount:string;date:string;reference:string;note:string};
-  splits:Split[]; uploaded:Upload|null; extracting:boolean; consent:boolean; inviteLink:string;
+  splits:Split[]; uploaded:Upload|null; extracting:boolean; consent:boolean; inviteLink:string; confirmation:Confirmation|null;
 };
 const navigation:{id:View;name:string;icon:string}[]=[
  {id:'dashboard',name:'Overview',icon:'home'}, {id:'remittances',name:'My padala',icon:'send'},
@@ -43,7 +44,7 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
   state:State={ready:false,busy:false,error:'',message:'',session:null,config:null,household:null,
     remittances:[],evidence:[],notices:[],activity:[],pendingInvitations:[],view:'dashboard',selected:null,modal:null,reviewed:null,
     authMode:'login',token:'',invitation:null,search:'',statusFilter:'all',plan:[],planAmount:'',
-    receipt:initialReceipt(),splits:[],uploaded:null,extracting:false,consent:false,inviteLink:'',privacyAcknowledged:false};
+    receipt:initialReceipt(),splits:[],uploaded:null,extracting:false,consent:false,inviteLink:'',confirmation:null,privacyAcknowledged:false};
   poll:ReturnType<typeof setInterval>|null=null;
   mounted=false;
   previousFocus:HTMLElement|null=null;
@@ -125,7 +126,7 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
   errorMessage(error:unknown) {return error instanceof Error?error.message:'Something went wrong. Please try again.';}
   subscriptionNeedsPayment(session:Session) {return !!session.billing?.enforcement_enabled&&!session.billing.subscription?.access_active;}
   isSessionEnded(error:unknown) {return error instanceof ApiError&&(error.status===401||error.message==='Household access has been removed. Contact the household owner.');}
-  endSession(message='') {setCSRF('');this.setState({session:null,household:null,remittances:[],evidence:[],notices:[],activity:[],pendingInvitations:[],selected:null,modal:null,view:'dashboard',privacyAcknowledged:false,error:message});}
+  endSession(message='') {setCSRF('');this.setState({session:null,household:null,remittances:[],evidence:[],notices:[],activity:[],pendingInvitations:[],selected:null,modal:null,confirmation:null,view:'dashboard',privacyAcknowledged:false,error:message});}
   async action(task:()=>Promise<void>) {
     if(this.state.busy)return;
     this.setState({busy:true,error:'',message:''});
@@ -134,7 +135,7 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
   }
   navigate=(view:View)=>{this.setState({view,selected:null,error:'',message:'',search:'',statusFilter:'all'});window.scrollTo(0,0);};
   openRemittance=(id:string)=>{void this.action(async()=>{const selected=await api<Remittance>(`/remittances/${id}`);this.setState({selected,view:'remittances'});window.scrollTo(0,0);});};
-  closeModal=()=>{if(!this.state.busy&&!this.state.extracting)this.setState({modal:null,error:'',reviewed:null});};
+  closeModal=()=>{if(!this.state.busy&&!this.state.extracting)this.setState({modal:null,error:'',reviewed:null,confirmation:null});};
   openNew=()=>{
     const assignee=this.state.household?.members.find(m=>m.is_active&&m.role==='member')?.id||this.state.session?.user.id||'';
     this.setState({modal:'new',planAmount:'',error:'',plan:[{name:'Rent',kind:'expense',amount:'',assigned_to:assignee,due_on:''},{name:'Groceries',kind:'expense',amount:'',assigned_to:assignee,due_on:''},{name:'Savings',kind:'savings',amount:'',assigned_to:assignee,due_on:''}]});
@@ -145,10 +146,15 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
     this.setState({selected:r,view:'remittances',modal:'upload',error:'',uploaded:null,consent:false,receipt:initialReceipt(),splits:[{allocation_id:allocationId||mine[0].id,amount:''}]});
   };
   openReview=(evidence:Evidence)=>this.setState({modal:'review',reviewed:evidence,error:''});
-  async logout() {await post('/auth/logout');setCSRF('');this.setState({session:null,household:null,remittances:[],evidence:[],notices:[],activity:[],pendingInvitations:[],selected:null,modal:null,authMode:'login',view:'dashboard',privacyAcknowledged:false});}
+  async logout() {await post('/auth/logout');setCSRF('');this.setState({session:null,household:null,remittances:[],evidence:[],notices:[],activity:[],pendingInvitations:[],selected:null,modal:null,confirmation:null,authMode:'login',view:'dashboard',privacyAcknowledged:false});}
   refreshBilling=()=>{void this.action(async()=>{await this.loadSession();if(this.state.session&&!this.subscriptionNeedsPayment(this.state.session))await this.refresh();this.setState({message:'Subscription status refreshed.'});});};
   startSubscription=(planCode:'basic'|'family')=>{void this.action(async()=>{const result=await post<{checkout_url:string}>('/billing/checkout',{plan_code:planCode});window.location.assign(result.checkout_url);});};
-  cancelSubscription=()=>{if(!window.confirm('Cancel this subscription? Xendit will stop future billing cycles. Canceling during the free trial also ends the trial when Xendit confirms it. Any completed charge is handled under the published refund policy.'))return;void this.action(async()=>{const billing=await post<Session['billing']>('/billing/cancel');this.setState(state=>({session:state.session?{...state.session,billing}:null,message:'Cancellation request recorded. Refresh shortly for Xendit confirmation.'}));});};
+  requestConfirmation=(confirmation:Confirmation)=>this.setState({modal:'confirm',confirmation,error:'',message:''});
+  confirmAction=()=>{
+    const confirmation=this.state.confirmation;if(!confirmation)return;
+    void this.action(async()=>{await confirmation.run();this.setState(state=>({modal:state.modal==='confirm'?null:state.modal,confirmation:null}));});
+  };
+  cancelSubscription=()=>this.requestConfirmation({title:'Cancel household subscription?',description:'Xendit will stop future billing cycles. Canceling during the free trial also ends the trial when Xendit confirms it. Completed charges are handled under the published refund policy.',confirmLabel:'Cancel subscription',danger:true,run:async()=>{const billing=await post<Session['billing']>('/billing/cancel');this.setState(state=>({session:state.session?{...state.session,billing}:null,message:'Cancellation request recorded. Refresh shortly for Xendit confirmation.'}));}});
   authSubmit=(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault();const form=event.currentTarget;const mode=this.state.authMode;
     void this.action(async()=>{
@@ -215,20 +221,18 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
     void this.action(async()=>{const result=await post<{link:string;email_queued:boolean}>('/invitations',{email:field(form,'email'),name:field(form,'name')});this.setState({inviteLink:result.link,message:result.email_queued?'Invitation queued for email delivery.':'Share this private, single-use invitation with your family member.'});await this.refresh();});
   };
   replaceInvitation=(invitation:PendingInvitation)=>{
-    if(!window.confirm(`Replace the invitation link for ${invitation.name}? The previous link will stop working immediately.`))return;
-    void this.action(async()=>{
+    this.requestConfirmation({title:'Replace invitation link?',description:`The previous link for ${invitation.name} will stop working immediately. You will receive a new link to copy.`,confirmLabel:'Replace link',run:async()=>{
       const result=await post<{link:string;email_queued:boolean}>('/invitations/replace',{email:invitation.email});
       this.setState({modal:'invite',inviteLink:result.link,message:result.email_queued?'Replacement invitation queued for email delivery.':'The old link no longer works. Copy the replacement link below.'});
       await this.refresh();
-    });
+    }});
   };
   revokeInvitation=(invitation:PendingInvitation)=>{
-    if(!window.confirm(`Revoke the invitation for ${invitation.name}? They will no longer be able to use this link.`))return;
-    void this.action(async()=>{
+    this.requestConfirmation({title:'Revoke invitation?',description:`${invitation.name} will no longer be able to use this invitation link. You can create a new invitation later.`,confirmLabel:'Revoke invitation',danger:true,run:async()=>{
       const result=await post<{message:string}>('/invitations/revoke',{email:invitation.email});
       this.setState({inviteLink:'',message:result.message});
       await this.refresh();
-    });
+    }});
   };
   memberLabel=(memberId:string)=>{
     const member=this.state.household?.members.find(item=>item.id===memberId);
@@ -236,12 +240,13 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
     return member.is_active?member.name:`${member.name} (access removed)`;
   };
   changeMemberAccess=(member:Household['members'][number],restore:boolean)=>{
-    if(!restore&&!window.confirm(`Remove ${member.name}'s access to this household? They will be signed out immediately. Existing shared records will remain in the household history.`))return;
-    void this.action(async()=>{
+    const run=async()=>{
       const result=await post<{message:string}>(`/household/members/${member.id}/${restore?'restore':'revoke'}`);
       this.setState({message:result.message});
       await this.refresh();
-    });
+    };
+    if(restore){void this.action(run);return;}
+    this.requestConfirmation({title:`Remove ${member.name}'s access?`,description:'They will be signed out immediately. Existing shared records remain in the household history.',confirmLabel:'Remove access',danger:true,run});
   };
   get totals(){return this.state.remittances.reduce((a,r)=>({sent:a.sent+r.amount_minor,recorded:a.recorded+r.recorded_minor,accepted:a.accepted+r.accepted_minor,savings:a.savings+r.savings_contributions_minor,pending:a.pending+r.pending_count}),{sent:0,recorded:0,accepted:0,savings:0,pending:0});}
 
@@ -313,7 +318,7 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
 
   renderModal() {
     const s=this.state;if(!s.modal)return null;
-    const titles={new:'Plan a new padala',upload:'Add supporting evidence',review:'Review the record',invite:'Invite your family'};
+    const titles={new:'Plan a new padala',upload:'Add supporting evidence',review:'Review the record',invite:'Invite your family',confirm:'Confirm action'};
     const user=s.session!.user;
     const members=(s.household?.members||[]).filter(member=>member.is_active);
     let planned=0;try{planned=s.plan.reduce((sum,a)=>sum+(a.amount?minor(a.amount):0),0);}catch{/* invalid fields are validated on submit */}
@@ -321,6 +326,7 @@ export default class PadalaApp extends Component<Record<string,never>,State> {
     const selected=s.selected;
     const allowedAllocations=selected?.allocations.filter(a=>user.role==='sender'||a.assigned_to===user.id)||[];
     return <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)this.closeModal();}}><section className={`modal ${s.modal==='new'||s.modal==='upload'?'wide-modal':''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" tabIndex={-1}><div className="modal-heading"><div><span className="eyebrow">PADALA FAMILY SPACE</span><h2 id="modal-title">{titles[s.modal]}</h2></div><button className="icon-btn" disabled={s.busy||s.extracting} onClick={this.closeModal} aria-label="Close dialog"><Icon name="close"/></button></div><ErrorBox message={s.error}/>{s.message&&<div className="success" role="status">{s.message}</div>}
+    {s.modal==='confirm'&&s.confirmation&&<div className="confirmation-content"><span className={`confirmation-icon ${s.confirmation.danger?'danger':''}`}><Icon name={s.confirmation.danger?'shield':'info'} size={22}/></span><h3>{s.confirmation.title}</h3><p className="subtext">{s.confirmation.description}</p><div className="modal-footer"><button type="button" className="btn secondary" disabled={s.busy} onClick={this.closeModal}>Keep current setup</button><button type="button" className={`btn ${s.confirmation.danger?'danger':'primary'}`} disabled={s.busy} onClick={this.confirmAction}>{s.busy?'Working…':s.confirmation.confirmLabel}</button></div></div>}
     {s.modal==='new'&&<form onSubmit={this.newSubmit}><p className="subtext">Record the amount actually received in pesos. Allocations organize the plan; they do not transfer money.</p><div className="form-grid"><label>Padala title<input name="title" required maxLength={160} placeholder="November household support"/></label><label>Amount received (PHP)<input inputMode="decimal" value={s.planAmount} onChange={e=>this.setState({planAmount:e.target.value})} required placeholder="30000.00"/></label><label>Received date<input type="date" name="date" required defaultValue={localDate()}/></label><label>Recipient<select name="recipient" defaultValue={members.find(m=>m.role==='member')?.id||user.id}>{members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><label>Original currency (optional)<input name="currency" defaultValue="PHP" pattern="[A-Z]{3}" maxLength={3}/></label><label>Original amount (optional)<input name="source_amount" inputMode="decimal" placeholder="e.g. 2000.00"/></label></div><div className="section-title"><h3>Give every peso a purpose</h3><span className={planned===total&&total>0?'good small':'muted small'}>{money(planned)} / {money(total)}</span></div><div className="plan-fields">{s.plan.map((a,i)=><div className="plan-line" key={i}><label>Purpose<input value={a.name} required maxLength={100} onChange={e=>this.changePlan(i,{name:e.target.value})}/></label><label>Type<select value={a.kind} onChange={e=>this.changePlan(i,{kind:e.target.value as PlanLine['kind']})}><option value="expense">Expense</option><option value="savings">Savings</option></select></label><label>Amount (PHP)<input inputMode="decimal" required value={a.amount} onChange={e=>this.changePlan(i,{amount:e.target.value})}/></label><label>Responsible member<select value={a.assigned_to} onChange={e=>this.changePlan(i,{assigned_to:e.target.value})}>{members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><label>Due date (optional)<input type="date" value={a.due_on} onChange={e=>this.changePlan(i,{due_on:e.target.value})}/></label><button type="button" className="icon-btn" aria-label={`Remove allocation ${i+1}`} disabled={s.plan.length===1} onClick={()=>this.setState({plan:s.plan.filter((_,j)=>i!==j)})}><Icon name="close" size={17}/></button></div>)}</div><button className="text-btn" type="button" onClick={()=>this.setState({plan:[...s.plan,{name:'',kind:'expense',amount:'',assigned_to:members.find(m=>m.role==='member')?.id||user.id,due_on:''}]})}><Icon name="plus" size={16}/>Add allocation</button><div className="modal-footer"><span className="small muted">Allocations must match the total exactly.</span><button className="btn primary" disabled={s.busy||total===0||planned!==total}>{s.busy?'Saving…':'Create padala'}</button></div></form>}
     {s.modal==='upload'&&selected&&<form onSubmit={this.evidenceSubmit}><p className="subtext">For <strong>{selected.title}</strong>. Upload a receipt or explain an expense without one.</p><label className={`file-zone ${s.uploaded?'file-selected':''}`}><Icon name={s.uploaded?'check':'upload'} size={28}/><strong>{s.uploaded?s.uploaded.name:'Choose a receipt or payment record'}</strong><small>JPEG, PNG, WebP, or PDF · up to 5 MB</small><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" aria-label="Receipt file" disabled={s.busy||s.extracting} onChange={e=>{this.uploadFile(e.target.files?.[0]);e.currentTarget.value='';}}/></label>{s.uploaded&&<button className="text-btn" type="button" onClick={()=>this.setState({uploaded:null})}>Use a declaration instead</button>}<div className="ocr-box"><div><strong>Read the receipt automatically</strong><p>{s.config?.ocr_configured?'Azure can suggest fields. Review all suggestions before submitting.':'Azure is not configured. Uploads and manual entry still work.'}</p></div>{s.config?.ocr_configured&&s.uploaded&&<><label className="checkbox"><input type="checkbox" checked={s.consent} onChange={e=>this.setState({consent:e.target.checked})}/>I agree to send this document to Azure for text extraction.</label><button type="button" className="btn secondary small" disabled={!s.consent||s.extracting||s.busy} onClick={this.extract}>{s.extracting?'Extracting…':'Extract details'}</button></>}</div><div className="form-grid"><label>Merchant / payee<input required maxLength={160} value={s.receipt.merchant} onChange={e=>this.setReceipt('merchant',e.target.value)}/></label><label>Total amount (PHP)<input required inputMode="decimal" value={s.receipt.amount} onChange={e=>this.setReceipt('amount',e.target.value)}/></label><label>Transaction date<input type="date" required value={s.receipt.date} onChange={e=>this.setReceipt('date',e.target.value)}/></label><label>Reference (optional)<input maxLength={120} value={s.receipt.reference} onChange={e=>this.setReceipt('reference',e.target.value)}/></label></div><h3>Assign this receipt to the plan</h3>{s.splits.map((l,i)=><div className="split-line" key={i}><label>Allocation<select value={l.allocation_id} onChange={e=>this.setState({splits:s.splits.map((v,j)=>j===i?{...v,allocation_id:e.target.value}:v)})}>{allowedAllocations.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Amount (PHP)<input required inputMode="decimal" value={l.amount} onChange={e=>this.setState({splits:s.splits.map((v,j)=>j===i?{...v,amount:e.target.value}:v)})}/></label><button type="button" className="icon-btn" aria-label="Remove split" disabled={s.splits.length===1} onClick={()=>this.setState({splits:s.splits.filter((_,j)=>j!==i)})}><Icon name="close" size={17}/></button></div>)}{s.splits.length<allowedAllocations.length&&<button type="button" className="text-btn" onClick={()=>{const next=allowedAllocations.find(a=>!s.splits.some(l=>l.allocation_id===a.id));if(next)this.setState({splits:[...s.splits,{allocation_id:next.id,amount:''}]});}}><Icon name="plus" size={16}/>Split across another allocation</button>}<label className="margin-top">{s.uploaded?'Notes (optional)':'Explanation (required without a receipt)'}<textarea value={s.receipt.note} onChange={e=>this.setReceipt('note',e.target.value)} minLength={s.uploaded?0:10} required={!s.uploaded} maxLength={2000} rows={3} placeholder="Add context your family will find helpful."/></label><div className="note"><Icon name="shield" size={17}/><span>Automatic checks are not receipt authentication. No bank or merchant is connected to confirm this transaction.</span></div><div className="modal-footer"><span className="small muted">Your household can view submitted records.</span><button className="btn primary" disabled={s.busy||s.extracting}>{s.busy?'Saving…':'Submit evidence'}</button></div></form>}
     {s.modal==='review'&&s.reviewed&&(()=>{const e=s.reviewed;return <div><div className="review-hero"><span className="category-icon"><Icon name="receipt" size={25}/></span><div><h3>{e.merchant}</h3><p>{shortDate(e.occurred_on)} · {e.uploader_name}</p></div><strong>{money(e.amount_minor)}</strong></div><div className="review-badges"><Badge status={e.status}/><Badge status="neutral">Provider: not connected</Badge></div><div className="verification"><Icon name="shield" size={20}/><div><strong>{e.upload?'Document checks completed':'Declared without a receipt'}</strong><p>{e.checks.length?'Some details need attention. These flags are not accusations of fraud.':e.upload?'No issues found by the implemented amount, date, and duplicate checks. This does not establish authenticity.':'This record is a household explanation, not documentary evidence.'}</p></div></div>{e.checks.map((check,i)=><div key={i} className="warning">{check}</div>)}{e.upload&&<a className="btn secondary wide" href={e.upload.download_url}><Icon name="download" size={17}/>Download original file</a>}<dl className="review-details"><div><dt>Reference</dt><dd>{e.reference||'Not provided'}</dd></div><div><dt>Family explanation</dt><dd>{e.note||'No additional explanation'}</dd></div>{e.review_note&&<div><dt>Latest review</dt><dd>{e.review_note}</dd></div>}</dl>{e.status!=='voided'&&<><label>Review or clarification note<textarea id="review-note" maxLength={2000} rows={3} placeholder="Be specific and respectful. Required for clarification or voiding."/></label><div className="review-actions">{user.role==='sender'&&<><button className="btn secondary" disabled={s.busy} onClick={()=>this.review('clarification')}>Ask for clarification</button><button className="btn primary" disabled={s.busy} onClick={()=>this.review('accepted')}><Icon name="check" size={17}/>Accept record</button></>}{user.id===e.uploader_id&&e.status==='clarification'&&<button className="btn primary" disabled={s.busy} onClick={()=>this.review('respond')}>Send explanation</button>}</div>{(user.role==='sender'||user.id===e.uploader_id&&e.status!=='accepted')&&<button className="text-btn danger-text" disabled={s.busy} onClick={()=>this.review('void')}>Void this record (reason required)</button>}</>}<p className="fine-print">Acceptance records the OFW’s judgment. It does not verify the issuer, trace specific remitted pesos, or confirm a current savings balance.</p></div>;})()}
