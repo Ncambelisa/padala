@@ -121,6 +121,11 @@ def test_sender_can_review_pending_invitations_and_replace_a_lost_link(client):
     assert client.get(f'/api/v1/invitations/{first_token}').status_code==404
     assert client.get(f'/api/v1/invitations/{second_token}').status_code==200
     assert client.get('/api/v1/invitations').json()[0]['email']=='family@example.test'
+    revoked=client.post('/api/v1/invitations/revoke',json={'email':'family@example.test'})
+    assert revoked.status_code==200,revoked.text
+    assert client.get(f'/api/v1/invitations/{second_token}').status_code==404
+    assert client.get('/api/v1/invitations').json()==[]
+    assert client.post('/api/v1/invitations',json={'name':'Family','email':'family@example.test'}).status_code==201
 
 def test_member_cannot_invite(client):
     register(client);member(client)

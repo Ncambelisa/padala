@@ -637,6 +637,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.commit()
         return {'link':link,'email_queued':bool(settings.smtp_host),'expires_in_days':7}
 
+    @app.post('/api/v1/invitations/revoke',tags=['Household'])
+    def revoke_invitation(data:RevokeInvitation,request:Request,db:Db,user:Auth):
+        """Invalidate a pending invitation link at the household owner's request."""
+        require_sender(user);limit(request,'invitations',20)
+        invitation=db.scalar(select(Invitation).where(Invitation.household_id==user.household_id,Invitation.email==data.email,Invitation.used==False,Invitation.expires_at>=int(time.time())))
+        if invitation is None:
+            raise HTTPException(404,'No active invitation was found for this email.')
+        name=invitation.name
+        db.delete(invitation)
+        audit(db,user,'invitation_revoked',f'Revoked the pending invitation for {name}.')
+        db.commit()
+        return {'message':f'Invitation for {name} was revoked. The link no longer works.'}
+
     @app.get('/api/v1/invitations/{token}',tags=['Household'])
     def invitation_info(token:str,db:Db):
         inv=db.get(Invitation,token_hash(token))

@@ -79,6 +79,12 @@ test('a sender can review a pending invitation and replace a lost link safely', 
 
     await oldLinkPage.goto(firstLink);
     await expect(oldLinkPage.locator('.error[role="alert"]')).toContainText('Invitation expired or unavailable');
+
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+    await page.getByRole('button', { name: 'Revoke invite', exact: true }).click();
+    await expect(page.getByText('No invitations are waiting to be accepted.', { exact: true })).toBeVisible();
+    await oldLinkPage.goto(replacement);
+    await expect(oldLinkPage.locator('.error[role="alert"]')).toContainText('Invitation expired or unavailable');
   } finally {
     await oldLinkContext.close();
   }
