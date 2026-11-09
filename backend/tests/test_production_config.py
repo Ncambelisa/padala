@@ -1,6 +1,8 @@
 import pytest
+from unittest.mock import Mock
 
 from app.config import ProductionConfigurationError, Settings
+from app.migrations import ensure_version_table_capacity
 
 
 def production_settings(**overrides):
@@ -105,3 +107,17 @@ def test_only_configured_proxy_networks_are_trusted():
     settings = production_settings()
     assert settings.is_trusted_proxy('10.42.0.7') is True
     assert settings.is_trusted_proxy('10.43.0.7') is False
+
+
+def test_postgres_migration_bootstrap_widens_alembic_revision_column():
+    connection = Mock()
+    connection.dialect.name = 'postgresql'
+    ensure_version_table_capacity(connection)
+    assert 'VARCHAR(128)' in str(connection.execute.call_args.args[0])
+
+
+def test_non_postgres_migration_bootstrap_leaves_alembic_version_table_unchanged():
+    connection = Mock()
+    connection.dialect.name = 'sqlite'
+    ensure_version_table_capacity(connection)
+    connection.execute.assert_not_called()
