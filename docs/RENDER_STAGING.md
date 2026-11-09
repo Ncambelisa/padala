@@ -19,9 +19,11 @@ information.
    `render.yaml` file.
 3. Review the three free resources. Confirm that the database access list is
    empty (private network only), then create the Blueprint.
-4. Wait for both web services to become live. Render supplies the public web
-   URL through `RENDER_EXTERNAL_HOSTNAME`; the API derives the matching staging
-   origin automatically. No secret needs to be entered.
+4. Wait for both web services to become live. Confirm that the web URL is
+   `https://padala-nico-staging-web.onrender.com`. If Render assigns a different
+   `onrender.com` hostname, update the API service's `APP_URL` and
+   `ALLOWED_ORIGINS` to that exact `https://` URL, then redeploy the API. No
+   secret needs to be entered.
 5. Open the **web** service URL, create a fictional household, sign in again,
    add a fictional padala, and upload only a non-sensitive sample image.
 

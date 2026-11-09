@@ -20,11 +20,15 @@ services:
         value: staging
       - key: DATA_DIR
         value: /tmp/padala-staging
-      - key: PUBLIC_APP_HOST
-        fromService:
-          name: padala-nico-staging-web
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      # Keep this fixed in staging to avoid a circular Blueprint dependency:
+      # the web service needs the API's private host while the API needs the
+      # browser-facing origin for CSRF/CORS and invitation links. Confirm this
+      # generated URL after deploy and update both values if Render assigns a
+      # different subdomain.
+      - key: APP_URL
+        value: https://padala-nico-staging-web.onrender.com
+      - key: ALLOWED_ORIGINS
+        value: https://padala-nico-staging-web.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: padala-nico-staging-db
