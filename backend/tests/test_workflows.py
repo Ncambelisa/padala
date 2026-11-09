@@ -15,6 +15,15 @@ from .conftest import register,login,member,create_padala,evidence_body,PASSWORD
 def png_bytes(color='white'):
     out=io.BytesIO();Image.new('RGB',(32,32),color).save(out,format='PNG');return out.getvalue()
 
+def family_padala(client,amount=300000):
+    """Create a plan as the OFW, then leave the family member signed in."""
+    owner=register(client)
+    family,_=member(client)
+    login(client,owner['email'])
+    remittance=create_padala(client,family['id'],amount)
+    login(client,family['email'])
+    return owner,family,remittance
+
 def test_health(client):
     assert client.get('/api/v1/health').json()['status']=='ok'
 
@@ -219,36 +228,41 @@ def test_full_review_workflow(client):
     assert detail['accepted_minor']==10000 and len(detail['activity'])>=4
 
 def test_split_receipt_no_double_count(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r,10000)
+    _,_,r=family_padala(client);body=evidence_body(r,10000)
     body['lines']=[{'allocation_id':a['id'],'amount_minor':5000} for a in r['allocations']]
     response=client.post('/api/v1/evidence',json=body);assert response.status_code==201,response.text
     detail=client.get(f"/api/v1/remittances/{r['id']}").json()
     assert detail['recorded_minor']==10000 and detail['savings_contributions_minor']==5000
 
 def test_mismatched_split(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r);body['lines'][0]['amount_minor']=1
+    _,_,r=family_padala(client);body=evidence_body(r);body['lines'][0]['amount_minor']=1
     assert client.post('/api/v1/evidence',json=body).status_code==422
 
 def test_foreign_allocation_rejected(client):
-    u=register(client);r=create_padala(client,u['id']);s=create_padala(client,u['id']);body=evidence_body(r);body['lines'][0]['allocation_id']=s['allocations'][0]['id']
+    owner,family,r=family_padala(client);login(client,owner['email']);s=create_padala(client,family['id']);login(client,family['email']);body=evidence_body(r);body['lines'][0]['allocation_id']=s['allocations'][0]['id']
     assert client.post('/api/v1/evidence',json=body).status_code==400
 
 def test_unassigned_family_blocked(client):
     owner=register(client);family,_=member(client);login(client,owner['email']);r=create_padala(client,owner['id']);login(client,family['email'])
     assert client.post('/api/v1/evidence',json=evidence_body(r)).status_code==403
 
+def test_ofw_cannot_upload_or_submit_a_family_update(client):
+    owner=register(client);family,_=member(client);login(client,owner['email']);r=create_padala(client,family['id'])
+    assert client.post('/api/v1/evidence',json=evidence_body(r)).status_code==403
+    assert client.post('/api/v1/uploads',files={'file':('receipt.png',png_bytes(),'image/png')}).status_code==403
+
 def test_no_receipt_requires_explanation(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r);body['note']=''
+    _,_,r=family_padala(client);body=evidence_body(r);body['note']=''
     assert client.post('/api/v1/evidence',json=body).status_code==422
 
 def test_exact_duplicate_upload(client):
-    register(client);b=png_bytes()
+    register(client);member(client);b=png_bytes()
     first=client.post('/api/v1/uploads',files={'file':('receipt.png',b,'image/png')});assert first.status_code==201,first.text
     same=client.post('/api/v1/uploads',files={'file':('copy.png',b,'image/png')})
     assert same.json()['id']==first.json()['id']
 
 def test_upload_attach_and_no_double_claim(client):
-    u=register(client);r=create_padala(client,u['id'])
+    _,_,r=family_padala(client)
     upload=client.post('/api/v1/uploads',files={'file':('receipt.png',png_bytes(),'image/png')}).json()
     body=evidence_body(r,upload_id=upload['id'])
     assert client.post('/api/v1/evidence',json=body).status_code==201
@@ -256,57 +270,57 @@ def test_upload_attach_and_no_double_claim(client):
     assert client.post('/api/v1/uploads',files={'file':('copy.png',png_bytes(),'image/png')}).status_code==409
 
 def test_upload_access_protected(client):
-    register(client)
+    register(client);member(client)
     up=client.post('/api/v1/uploads',files={'file':('receipt.png',png_bytes(),'image/png')}).json()
     assert client.get(up['download_url']).status_code==200
     register(client,'other@example.test')
     assert client.get(up['download_url']).status_code==404
 
 def test_invalid_upload(client):
-    register(client)
+    register(client);member(client)
     assert client.post('/api/v1/uploads',files={'file':('fake.png',b'<script>alert(1)</script>','image/png')}).status_code==400
 
 def test_oversize_upload(client):
-    register(client)
+    register(client);member(client)
     assert client.post('/api/v1/uploads',files={'file':('large.jpg',b'x'*(6*1024*1024),'image/jpeg')}).status_code==413
 
 def test_ocr_not_configured(client):
-    register(client);up=client.post('/api/v1/uploads',files={'file':('r.png',png_bytes(),'image/png')}).json()
+    register(client);member(client);up=client.post('/api/v1/uploads',files={'file':('r.png',png_bytes(),'image/png')}).json()
     assert client.post(f"/api/v1/uploads/{up['id']}/extract",json={'consent':True}).status_code==503
 
 def test_ocr_requires_consent(client):
-    register(client);up=client.post('/api/v1/uploads',files={'file':('r.png',png_bytes(),'image/png')}).json()
+    register(client);member(client);up=client.post('/api/v1/uploads',files={'file':('r.png',png_bytes(),'image/png')}).json()
     assert client.post(f"/api/v1/uploads/{up['id']}/extract",json={'consent':False}).status_code==422
 
 def test_duplicate_reference_flag(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r);body['reference']='REF-123'
+    _,_,r=family_padala(client);body=evidence_body(r);body['reference']='REF-123'
     assert client.post('/api/v1/evidence',json=body).status_code==201
     second=client.post('/api/v1/evidence',json=body).json()
     assert any('reference' in msg for msg in second['checks'])
 
 def test_overspend_flag(client):
-    u=register(client);r=create_padala(client,u['id']);result=client.post('/api/v1/evidence',json=evidence_body(r,200000)).json()
+    _,_,r=family_padala(client);result=client.post('/api/v1/evidence',json=evidence_body(r,200000)).json()
     assert any('exceed' in s for s in result['checks'])
 
 def test_future_date_flag(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r);body['occurred_on']='2099-01-01'
+    _,_,r=family_padala(client);body=evidence_body(r);body['occurred_on']='2099-01-01'
     assert any('future' in s for s in client.post('/api/v1/evidence',json=body).json()['checks'])
 
 def test_void_removes_totals_preserves_history(client):
-    u=register(client);r=create_padala(client,u['id']);e=client.post('/api/v1/evidence',json=evidence_body(r)).json()
+    _,_,r=family_padala(client);e=client.post('/api/v1/evidence',json=evidence_body(r)).json()
     result=client.post(f"/api/v1/evidence/{e['id']}/void",json={'note':'Entered against the wrong plan.','expected_version':e['version']})
     assert result.status_code==200
     d=client.get(f"/api/v1/remittances/{r['id']}").json()
     assert d['recorded_minor']==0 and d['evidence'][0]['status']=='voided'
 
 def test_stale_review_blocked(client):
-    u=register(client);r=create_padala(client,u['id']);e=client.post('/api/v1/evidence',json=evidence_body(r)).json()
+    owner,_,r=family_padala(client);e=client.post('/api/v1/evidence',json=evidence_body(r)).json();login(client,owner['email'])
     body={'status':'accepted','expected_version':e['version']}
     assert client.post(f"/api/v1/evidence/{e['id']}/review",json=body).status_code==200
     assert client.post(f"/api/v1/evidence/{e['id']}/review",json=body).status_code==409
 
 def test_no_forged_verification_field(client):
-    u=register(client);r=create_padala(client,u['id']);body=evidence_body(r);body['provider_confirmation']='verified'
+    _,_,r=family_padala(client);body=evidence_body(r);body['provider_confirmation']='verified'
     assert client.post('/api/v1/evidence',json=body).status_code==422
 
 def test_export_scoped(client):

@@ -720,6 +720,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post('/api/v1/uploads',tags=['Receipts'],status_code=201)
     async def upload(request:Request,db:Db,user:Auth,file:UploadFile=File(...)):
+        if user.role!='member':
+            raise HTTPException(403,'Only a family member can upload a supporting record.')
         limit(request,'upload',100)
         data=await file.read(settings.max_upload_bytes+1)
         mime,extension=inspect_file(data,file.filename or 'receipt',settings)
@@ -778,6 +780,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post('/api/v1/evidence',tags=['Receipts'],status_code=201)
     def submit_evidence(data:EvidenceCreate,db:Db,user:Auth):
+        if user.role!='member':
+            raise HTTPException(403,'Only the assigned family member can add a family update.')
         remittance=owned(db,Remittance,data.remittance_id,user)
         upload=owned(db,Upload,data.upload_id,user) if data.upload_id else None
         if upload and upload.uploader_id!=user.id:
@@ -795,7 +799,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             a=db.get(Allocation,line.allocation_id)
             if not a or a.remittance_id!=remittance.id:
                 raise HTTPException(400,'Each split must belong to this padala.')
-            if user.role!='sender' and a.assigned_to!=user.id:
+            if a.assigned_to!=user.id:
                 raise HTTPException(403,'Submit evidence only for allocations assigned to you.')
             used=db.scalar(select(func.coalesce(func.sum(EvidenceLine.amount_minor),0)).join(Evidence,Evidence.id==EvidenceLine.evidence_id).where(EvidenceLine.allocation_id==a.id,Evidence.status!='voided')) or 0
             if used+line.amount_minor>a.amount_minor:
