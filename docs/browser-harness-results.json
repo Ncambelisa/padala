@@ -1,0 +1,23 @@
+{
+  "runtime": "Restricted harness: TypeScript transpilation + React 16 + real FastAPI through httpx bridge; not a Next.js build",
+  "widths": [
+    360,
+    390,
+    430,
+    768,
+    1024,
+    1440
+  ],
+  "workflows": [
+    "sign in",
+    "dashboard",
+    "remittance detail",
+    "declaration submit",
+    "OFW acceptance",
+    "create remittance",
+    "invite member",
+    "sign out",
+    "family sign in"
+  ],
+  "page_errors": []
+}

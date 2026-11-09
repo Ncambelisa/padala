@@ -1,0 +1,39 @@
+# Local development only. Every exposed port is bound to your loopback interface.
+services:
+  api:
+    build: ./backend
+    environment:
+      DATA_DIR: /data
+      APP_URL: http://localhost:3000
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000
+      SECURE_COOKIES: "false"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_STARTTLS: "false"
+      EMAIL_FROM: "Padala <no-reply@padala.local>"
+      AZURE_DOCUMENT_ENDPOINT: ${AZURE_DOCUMENT_ENDPOINT:-}
+      AZURE_DOCUMENT_KEY: ${AZURE_DOCUMENT_KEY:-}
+    volumes:
+      - padala-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - mailpit
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+volumes:
+  padala-data:
