@@ -276,6 +276,16 @@ def test_upload_access_protected(client):
     register(client,'other@example.test')
     assert client.get(up['download_url']).status_code==404
 
+def test_uploaded_receipt_preview_is_private_and_inline(client):
+    register(client);member(client)
+    up=client.post('/api/v1/uploads',files={'file':('receipt.png',png_bytes(),'image/png')}).json()
+    preview=client.get(up['preview_url'])
+    assert preview.status_code==200
+    assert preview.headers['content-disposition'].startswith('inline;')
+    assert preview.headers['x-frame-options']=='SAMEORIGIN'
+    register(client,'other@example.test')
+    assert client.get(up['preview_url']).status_code==404
+
 def test_invalid_upload(client):
     register(client);member(client)
     assert client.post('/api/v1/uploads',files={'file':('fake.png',b'<script>alert(1)</script>','image/png')}).status_code==400

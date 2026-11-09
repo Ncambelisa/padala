@@ -33,7 +33,12 @@ const config: NextConfig = {
     return [{ source: '/api/v1/:path*', destination: `${api}/api/v1/:path*` }];
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
+    return [
+      { source: '/:path*', headers: securityHeaders },
+      // Receipt previews are validated uploads and remain private to the
+      // household. This narrow exception allows the app's own preview frame.
+      { source: '/api/v1/uploads/:uploadId/preview', headers: [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }] },
+    ];
   },
 };
 export default config;

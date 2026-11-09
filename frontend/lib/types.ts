@@ -9,7 +9,7 @@ export type Session = { user: User; csrf: string; household: {id:string; name:st
 export type Config = { ocr_configured: boolean; email_configured: boolean; bank_confirmation: boolean; payment_processing:boolean; registration_enabled: boolean; email_verification_required:boolean; max_upload_bytes:number; version:string; privacy_notice:PrivacyNotice; billing:Billing };
 export type Allocation = { id:string; name:string; kind:'expense'|'savings'; amount_minor:number; assigned_to:string; due_on:string; recorded_minor:number; accepted_minor:number };
 export type Extraction = { provider:string; merchant:string|null; occurred_on:string|null; amount_minor:number|null; currency:string|null; notice:string; confidence:Record<string,number|null> };
-export type Upload = { id:string; name:string; mime:string; size:number; download_url:string; extraction:Partial<Extraction> };
+export type Upload = { id:string; name:string; mime:string; size:number; download_url:string; preview_url:string; extraction:Partial<Extraction> };
 export type Evidence = { id:string; remittance_id:string; uploader_id:string; uploader_name:string; merchant:string; amount_minor:number; occurred_on:string; reference:string; note:string; status:'pending'|'accepted'|'clarification'|'voided'; review_note:string; checks:string[]; version:number; created_at:number; provider_confirmation:'not_connected'; document_status:string; upload:Upload|null; lines:{allocation_id:string;amount_minor:number}[] };
 export type Audit = { id:string; actor:string; action:string; detail:string; remittance_id:string; created_at:number };
 // Invitation bearer links are deliberately never returned here. The owner can

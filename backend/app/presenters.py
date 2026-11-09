@@ -10,7 +10,8 @@ def user_dict(u):
 
 def upload_dict(u):
     return {'id':u.id,'name':u.name,'mime':u.mime,'size':u.size,'extraction':u.extraction,
-            'download_url':f'/api/v1/uploads/{u.id}/download'}
+            'download_url':f'/api/v1/uploads/{u.id}/download',
+            'preview_url':f'/api/v1/uploads/{u.id}/preview'}
 
 def evidence_dict(db, e):
     lines = db.scalars(select(EvidenceLine).where(EvidenceLine.evidence_id==e.id)).all()

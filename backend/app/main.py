@@ -134,7 +134,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response=await call_next(request)
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
-        response.headers['X-Frame-Options']='DENY'
+        # Previewing a validated household receipt in Padala's own modal needs
+        # same-origin framing. All other responses remain non-frameable.
+        response.headers['X-Frame-Options']='SAMEORIGIN' if request.url.path.startswith('/api/v1/uploads/') and request.url.path.endswith('/preview') else 'DENY'
         response.headers['Referrer-Policy']='no-referrer'
         response.headers['Cross-Origin-Opener-Policy']='same-origin'
         response.headers['Cross-Origin-Resource-Policy']='same-origin'
@@ -756,6 +758,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not path.is_file():
             raise HTTPException(404,'The stored file is unavailable. Check your data backup.')
         return FileResponse(path,media_type=row.mime,filename=row.name,content_disposition_type='attachment')
+
+    @app.get('/api/v1/uploads/{upload_id}/preview',tags=['Receipts'])
+    def preview_upload(upload_id:str,db:Db,user:Auth):
+        """Render a validated receipt only to signed-in household members."""
+        row=owned(db,Upload,upload_id,user)
+        evidence=db.scalar(select(Evidence).where(Evidence.upload_id==row.id))
+        if row.uploader_id!=user.id and evidence is None:
+            raise HTTPException(404,'File not found.')
+        path=settings.uploads_dir/row.storage_name
+        if not path.is_file():
+            raise HTTPException(404,'The stored file is unavailable. Check your data backup.')
+        return FileResponse(path,media_type=row.mime,filename=row.name,content_disposition_type='inline')
 
     @app.post('/api/v1/uploads/{upload_id}/extract',tags=['Integrations'])
     async def extract(upload_id:str,data:ExtractionRequest,request:Request,db:Db,user:Auth):
